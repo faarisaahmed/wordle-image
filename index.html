@@ -1,0 +1,791 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wordle Painter</title>
+<meta name="description" content="Paint a picture with Wordle tiles, pick an answer, and get the guesses that make it.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='1' y='1' width='14' height='14' rx='3' fill='%23538d4e'/><rect x='17' y='1' width='14' height='14' rx='3' fill='%23b59f3b'/><rect x='1' y='17' width='14' height='14' rx='3' fill='%23b59f3b'/><rect x='17' y='17' width='14' height='14' rx='3' fill='%23538d4e'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f0f10;
+    --card: #1a1a1c;
+    --card-2: #222225;
+    --border: #2e2e32;
+    --border-strong: #48484e;
+    --text: #f4f4f5;
+    --muted: #9b9ba3;
+    --grey: #3a3a3c;
+    --yellow: #b59f3b;
+    --green: #538d4e;
+    --danger: #f2555a;
+    --danger-bg: rgba(242, 85, 90, .1);
+    --ok-bg: rgba(83, 141, 78, .14);
+    --tile-text: #fff;
+    --empty: #121213;
+    --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 20px 40px -20px rgba(0,0,0,.6);
+    --tile: 56px;
+    --gap: 6px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f4f4f1;
+      --card: #ffffff;
+      --card-2: #f6f6f4;
+      --border: #e3e3df;
+      --border-strong: #c8c8c2;
+      --text: #18181b;
+      --muted: #6b6b72;
+      --grey: #787c7e;
+      --yellow: #c9b458;
+      --green: #6aaa64;
+      --danger: #d93a40;
+      --danger-bg: rgba(217, 58, 64, .08);
+      --ok-bg: rgba(106, 170, 100, .14);
+      --empty: #ffffff;
+      --shadow: 0 1px 2px rgba(0,0,0,.04), 0 20px 40px -24px rgba(0,0,0,.18);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 16px 64px; }
+
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+  .logo { display: grid; grid-template-columns: repeat(2, 14px); gap: 3px; }
+  .logo i { width: 14px; height: 14px; border-radius: 3px; display: block; }
+  h1 { font-size: 26px; font-weight: 800; letter-spacing: -.02em; margin: 0; }
+  .tagline { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+
+  .layout { display: grid; grid-template-columns: 1fr; gap: 20px; }
+  @media (min-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); align-items: start; } }
+  .col { display: grid; gap: 20px; min-width: 0; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 22px;
+    box-shadow: var(--shadow);
+    min-width: 0;
+  }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .card h2 { font-size: 15px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 10px; }
+  .step {
+    display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 7px;
+    background: var(--card-2); border: 1px solid var(--border); font-size: 12px; color: var(--muted);
+  }
+  .hint { color: var(--muted); font-size: 13px; margin: 0; }
+
+  /* Brush selector */
+  .brushes { display: inline-flex; background: var(--card-2); border: 1px solid var(--border); border-radius: 12px; padding: 4px; gap: 4px; }
+  .brush {
+    display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent;
+    padding: 7px 12px; border-radius: 9px; font-size: 13px; font-weight: 600; color: var(--muted);
+    transition: background .15s, color .15s;
+  }
+  .brush .sw { width: 14px; height: 14px; border-radius: 4px; }
+  .brush kbd { font: 500 11px Inter, sans-serif; color: var(--muted); opacity: .7; }
+  .brush[aria-pressed="true"] { background: var(--card); color: var(--text); box-shadow: 0 0 0 1px var(--border-strong); }
+
+  /* Tiles */
+  .board { display: grid; gap: var(--gap); justify-content: center; user-select: none; -webkit-user-select: none; }
+  .row { display: grid; grid-template-columns: repeat(5, var(--tile)); gap: var(--gap); position: relative; border-radius: 8px; }
+  .tile {
+    width: var(--tile); height: var(--tile); border-radius: 6px;
+    display: grid; place-items: center;
+    font-weight: 800; font-size: calc(var(--tile) * .5); text-transform: uppercase; color: var(--tile-text);
+    background: var(--grey);
+    transition: background-color .12s, transform .12s, box-shadow .12s;
+    position: relative;
+  }
+  .tile.c1 { background: var(--yellow); }
+  .tile.c2 { background: var(--green); }
+  #paint .tile { cursor: pointer; }
+  #paint { touch-action: none; }
+  @media (hover: hover) { #paint .row:not(.locked) .tile:hover { transform: scale(1.05); box-shadow: 0 0 0 2px var(--border-strong); } }
+  #paint .row.locked .tile { cursor: not-allowed; }
+  .lock {
+    position: absolute; right: calc(-1 * (var(--gap) + 22px)); top: 50%; transform: translateY(-50%);
+    width: 18px; height: 18px; color: var(--muted); opacity: .8;
+  }
+  .row-flag {
+    position: absolute; left: calc(-1 * (var(--gap) + 22px)); top: 50%; transform: translateY(-50%);
+    width: 18px; height: 18px; border-radius: 50%; background: var(--danger); color: #fff;
+    display: none; place-items: center; font-size: 12px; font-weight: 800;
+  }
+  .row.bad .row-flag { display: grid; }
+  .row.bad::after {
+    content: ""; position: absolute; inset: -4px; border-radius: 10px;
+    border: 2px dashed var(--danger); pointer-events: none;
+  }
+  .tile.culprit::after {
+    content: ""; position: absolute; inset: 3px; border-radius: 4px;
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--danger);
+  }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; justify-content: center; }
+  .chip {
+    border: 1px solid var(--border); background: var(--card-2); border-radius: 999px;
+    padding: 6px 12px; font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;
+    transition: border-color .15s, background .15s;
+  }
+  .chip:hover { border-color: var(--border-strong); }
+  .chip:active { transform: translateY(1px); }
+  
+  /* Answer input */
+  .answer-box { position: relative; display: flex; justify-content: center; gap: var(--gap); }
+  .answer-box .slot {
+    width: var(--tile); height: var(--tile); border-radius: 6px; border: 2px solid var(--border-strong);
+    background: var(--empty); display: grid; place-items: center;
+    font-weight: 800; font-size: calc(var(--tile) * .5); text-transform: uppercase;
+    transition: border-color .12s, transform .1s;
+  }
+  .answer-box .slot.filled { border-color: var(--muted); animation: pop .12s ease-out; }
+  .answer-box.focus .slot.cursor { border-color: var(--text); }
+  .answer-box input {
+    position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; border: 0; cursor: text;
+    font-size: 16px;
+  }
+  .answer-row { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
+  .icon-btn {
+    width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--border); background: var(--card-2);
+    display: grid; place-items: center; flex-shrink: 0;
+  }
+  .icon-btn:hover { border-color: var(--border-strong); }
+  .icon-btn svg { width: 18px; height: 18px; }
+  .answer-note { text-align: center; margin-top: 12px; min-height: 20px; font-size: 13px; color: var(--muted); }
+  .answer-note.warn { color: var(--yellow); }
+
+  .finder { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); display: grid; gap: 12px; justify-items: center; }
+  .progress { width: 100%; height: 4px; border-radius: 999px; background: var(--card-2); overflow: hidden; }
+  .progress i { display: block; height: 100%; width: 0; background: var(--green); transition: width .1s; }
+  .find-out:empty { display: none; }
+  .find-out { width: 100%; font-size: 13px; color: var(--muted); text-align: center; }
+  .find-out .words { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 10px; }
+  .find-out .words button {
+    border: 1px solid var(--border); background: var(--card-2); border-radius: 8px; padding: 4px 9px;
+    font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  }
+  .find-out .words button:hover { border-color: var(--green); color: var(--green); }
+  .find-out .words button.on { background: var(--green); border-color: var(--green); color: #fff; }
+  .find-out .more { margin-top: 10px; border: 0; background: none; color: var(--text); text-decoration: underline; text-underline-offset: 2px; font-size: 13px; }
+
+  /* Results */
+  .status {
+    display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px;
+    font-size: 14px; margin-bottom: 18px; border: 1px solid transparent;
+  }
+  .status .dot { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; font-size: 12px; font-weight: 800; color: #fff; margin-top: 1px; }
+  .status.ok { background: var(--ok-bg); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
+  .status.ok .dot { background: var(--green); }
+  .status.bad { background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
+  .status.bad .dot { background: var(--danger); }
+  .status.idle { background: var(--card-2); border-color: var(--border); color: var(--muted); }
+  .status.idle .dot { background: var(--border-strong); }
+  .status strong { display: block; }
+  .status span.sub { color: var(--muted); font-size: 13px; }
+
+  .results { display: grid; gap: var(--gap); justify-content: center; }
+  .rrow { display: flex; align-items: center; gap: 12px; }
+  .rrow .row { flex-shrink: 0; }
+  .cycler { display: flex; align-items: center; gap: 2px; min-width: 112px; }
+  .cycler button {
+    width: 30px; height: 30px; border-radius: 9px; border: 1px solid transparent; background: transparent;
+    display: grid; place-items: center; color: var(--muted);
+  }
+  .cycler button:hover:not(:disabled) { background: var(--card-2); border-color: var(--border); color: var(--text); }
+  .cycler button:disabled { opacity: .3; cursor: default; }
+  .cycler .count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 52px; text-align: center; }
+  .cycler .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  .tag.bad { color: var(--danger); background: var(--danger-bg); }
+  .tag.win { color: var(--green); background: var(--ok-bg); }
+  .tag.rep { color: var(--yellow); background: color-mix(in srgb, var(--yellow) 15%, transparent); margin-left: 4px; }
+  .results .tile.empty { opacity: .45; }
+  .tile.flip { animation: flip .35s ease both; }
+  @keyframes flip { 0% { transform: rotateX(90deg); } 100% { transform: rotateX(0); } }
+  @keyframes pop { 0% { transform: scale(.9); } 60% { transform: scale(1.06); } 100% { transform: scale(1); } }
+  @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+  .row.shake { animation: shake .25s ease 2; }
+
+  .problems { margin: 18px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .problems li {
+    display: flex; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--card-2);
+    border: 1px solid var(--border); font-size: 13px;
+  }
+  .problems .rn { font-weight: 700; color: var(--danger); white-space: nowrap; }
+  .problems button.link { border: 0; background: none; padding: 0; color: var(--text); text-decoration: underline; text-underline-offset: 2px; font-size: 13px; }
+
+  .options { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); align-items: center; justify-content: space-between; }
+  .toggles { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+  .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; user-select: none; }
+  .toggle input { position: absolute; opacity: 0; pointer-events: none; }
+  .toggle .track { width: 32px; height: 18px; border-radius: 999px; background: var(--border-strong); position: relative; transition: background .15s; flex-shrink: 0; }
+  .toggle .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  .toggle input:checked + .track { background: var(--green); }
+  .toggle input:checked + .track::after { transform: translateX(14px); }
+  .toggle input:focus-visible + .track { outline: 2px solid var(--text); outline-offset: 2px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .btn {
+    border: 1px solid var(--border); background: var(--card-2); border-radius: 10px; padding: 8px 12px;
+    font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--border-strong); }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .btn.primary { background: var(--green); border-color: var(--green); color: #fff; }
+  .btn svg { width: 15px; height: 15px; }
+
+  /* Explainer */
+  details.explain summary { cursor: pointer; font-weight: 700; font-size: 15px; list-style: none; display: flex; align-items: center; justify-content: space-between; }
+  details.explain summary::-webkit-details-marker { display: none; }
+  details.explain summary .chev { transition: transform .2s; color: var(--muted); }
+  details.explain[open] summary .chev { transform: rotate(180deg); }
+  .explain-body { font-size: 14px; color: var(--muted); margin-top: 14px; }
+  .explain-body ol { padding-left: 20px; margin: 0 0 14px; }
+  .explain-body li { margin-bottom: 6px; }
+  .explain-body b { color: var(--text); }
+  .examples { display: grid; gap: 14px; }
+  .example { display: grid; gap: 6px; }
+  .mini { --tile: 30px; --gap: 4px; display: flex; gap: 4px; align-items: center; }
+  .mini .tile { font-size: 15px; border-radius: 4px; }
+  .mini .lbl { font-size: 11px; color: var(--muted); width: 54px; text-transform: uppercase; letter-spacing: .06em; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0;
+    background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; font-weight: 600;
+    transition: opacity .2s, transform .2s; pointer-events: none; z-index: 10;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 36px; }
+  footer a { color: inherit; }
+
+  @media (max-width: 520px) {
+    .wrap { padding-top: 20px; }
+    .card { padding: 18px 16px; border-radius: 16px; }
+    :root { --tile: min(52px, calc((100vw - 32px - 32px - 60px - 4 * 6px) / 5)); }
+    .results { --tile: min(44px, calc((100vw - 32px - 32px - 120px - 4 * 5px) / 5)); --gap: 5px; }
+    .cycler { min-width: 0; gap: 0; }
+    .cycler button { width: 24px; height: 28px; }
+    .cycler .count { min-width: 0; font-size: 11px; padding: 0 2px; }
+    .cycler .tag.rep { display: none; }
+    .rrow { gap: 8px; }
+    .brush { padding: 6px 9px; }
+    .brush kbd { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo" aria-hidden="true"><i style="background:var(--green)"></i><i style="background:var(--yellow)"></i><i style="background:var(--yellow)"></i><i style="background:var(--green)"></i></div>
+    <div>
+      <h1>Wordle Painter</h1>
+      <p class="tagline">Paint a picture with Wordle tiles, pick an answer, get the guesses that make it.</p>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="col">
+      <section class="card">
+        <div class="card-head">
+          <h2><span class="step">1</span>Paint your picture</h2>
+          <div class="brushes" role="group" aria-label="Brush colour">
+            <button class="brush" data-brush="0"><span class="sw" style="background:var(--grey)"></span>Grey<kbd>1</kbd></button>
+            <button class="brush" data-brush="1"><span class="sw" style="background:var(--yellow)"></span>Yellow<kbd>2</kbd></button>
+            <button class="brush" data-brush="2"><span class="sw" style="background:var(--green)"></span>Green<kbd>3</kbd></button>
+          </div>
+        </div>
+        <div class="board" id="paint" aria-label="Picture grid"></div>
+        <div class="toolbar">
+          <button class="chip" data-preset="heart">♥ Heart</button>
+          <button class="chip" data-preset="smile">☺ Smile</button>
+          <button class="chip" data-preset="stairs">◢ Stairs</button>
+          <button class="chip" data-preset="checker">▦ Checker</button>
+          <button class="chip" data-preset="arrow">▲ Arrow</button>
+        </div>
+        <div class="toolbar" style="margin-top:8px">
+          <button class="chip" id="randomPic">⚄ Random</button>
+          <button class="chip" id="clearPic">✕ Clear</button>
+        </div>
+        <p class="hint" style="text-align:center;margin-top:14px">Click or drag to paint. Clicking a tile that's already your brush colour turns it grey. The last row is the answer, so it's always green.</p>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2><span class="step">2</span>Choose the answer</h2>
+        </div>
+        <div class="answer-row">
+          <div class="answer-box" id="answerBox">
+            <div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div><div class="slot"></div>
+            <input id="answerInput" type="text" inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="5" aria-label="Answer word">
+          </div>
+          <button class="icon-btn" id="randomAnswer" title="Random answer" aria-label="Random answer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="8.5" cy="15.5" r="1.2" fill="currentColor"/></svg>
+          </button>
+        </div>
+        <div class="answer-note" id="answerNote"></div>
+        <div class="finder">
+          <button class="btn" id="findBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Find answers that fit my picture
+          </button>
+          <div class="progress" id="findProgress" hidden><i></i></div>
+          <div class="find-out" id="findOut"></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <details class="explain">
+          <summary>How Wordle colours duplicate letters <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></summary>
+          <div class="explain-body">
+            <ol>
+              <li><b>Greens first.</b> Every letter in the correct spot turns green, no matter where it sits in the word.</li>
+              <li><b>Then yellows, left to right.</b> The answer letters that weren't matched green form a pool. A guess letter is yellow only if the pool still has a copy of it, and that copy gets used up.</li>
+              <li><b>Everything else is grey</b>, including extra copies of a letter once the answer has run out of them.</li>
+            </ol>
+            <div class="examples" id="examples"></div>
+            <p style="margin:14px 0 0">So some pictures can't be made at all. If the answer is <b style="color:var(--text)">CRANE</b> and a row is green, green, green, green, yellow, the only leftover letter is E, and an E in the last spot would be green. This page checks every row against these rules and tells you exactly which tiles are the problem.</p>
+          </div>
+        </details>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="card">
+        <div class="card-head">
+          <h2><span class="step">3</span>Your guesses</h2>
+          <button class="btn" id="shuffle" title="Pick different words">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>Shuffle
+          </button>
+        </div>
+        <div class="status idle" id="status"><span class="dot">…</span><div><strong>Enter an answer</strong><span class="sub">Type a 5-letter word in step 2.</span></div></div>
+        <div class="results" id="results"></div>
+        <ul class="problems" id="problems"></ul>
+        <div class="options">
+          <div class="toggles">
+            <label class="toggle"><input type="checkbox" id="optCommon"><span class="track"></span>Common words only</label>
+            <label class="toggle"><input type="checkbox" id="optUnique" checked><span class="track"></span>No repeated guesses</label>
+          </div>
+          <div class="actions">
+            <button class="btn" id="copyWords" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>Copy guesses
+            </button>
+            <button class="btn" id="copyEmoji">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Copy emoji
+            </button>
+            <button class="btn primary" id="copyLink">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>Share link
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <footer>Uses the 14,855 words Wordle accepts as guesses. "Common words" are the 2,315 words from Wordle's original answer list.</footer>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="words.js"></script>
+<script src="wordle.js"></script>
+<script>
+(() => {
+  const W = window.Wordle;
+  const ANSWERS = window.WORDS_ANSWERS.split(' ');
+  const EXTRA = window.WORDS_EXTRA.split(' ');
+  const ALL = ANSWERS.concat(EXTRA); // common words first, so they're suggested first
+  const ANSWER_SET = new Set(ANSWERS);
+  const ALL_SET = new Set(ALL);
+  const ROWS = 6, COLS = 5;
+
+  const PRESETS = {
+    heart:   ['01010', '11111', '11111', '01110', '00100'],
+    smile:   ['00000', '01010', '00000', '10001', '01110'],
+    stairs:  ['20000', '22000', '22200', '22220', '00000'],
+    checker: ['10101', '01010', '10101', '01010', '10101'],
+    arrow:   ['00100', '01110', '11111', '00100', '00100'],
+  };
+
+  const state = {
+    grid: Array.from({ length: ROWS }, (_, r) => Array(COLS).fill(r === ROWS - 1 ? 2 : 0)),
+    answer: '',
+    brush: 1,
+    commonOnly: false,
+    unique: true,
+    offsets: Array(ROWS).fill(0),
+  };
+  let lastRows = null;
+
+  const $ = s => document.querySelector(s);
+  const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+
+  // ---------- URL state ----------
+  function loadHash() {
+    const h = new URLSearchParams(location.hash.slice(1));
+    const g = h.get('g');
+    if (g && /^[012]{25}$/.test(g)) for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) state.grid[r][c] = +g[r * 5 + c];
+    const a = (h.get('a') || '').toLowerCase();
+    if (/^[a-z]{5}$/.test(a)) state.answer = a;
+    if (h.get('common') === '1') state.commonOnly = true;
+    if (h.get('unique') === '0') state.unique = false;
+  }
+  function saveHash() {
+    const p = new URLSearchParams();
+    p.set('g', state.grid.slice(0, 5).map(r => r.join('')).join(''));
+    if (state.answer) p.set('a', state.answer);
+    if (state.commonOnly) p.set('common', '1');
+    if (!state.unique) p.set('unique', '0');
+    history.replaceState(null, '', '#' + p.toString());
+  }
+
+  // ---------- Paint grid ----------
+  const paint = $('#paint');
+  const paintTiles = [];
+  const LOCK_SVG = '<svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+  for (let r = 0; r < ROWS; r++) {
+    const row = el('div', 'row' + (r === ROWS - 1 ? ' locked' : ''));
+    row.appendChild(el('span', 'row-flag', '!'));
+    paintTiles.push([]);
+    for (let c = 0; c < COLS; c++) {
+      const t = el('div', 'tile');
+      t.dataset.r = r; t.dataset.c = c;
+      row.appendChild(t);
+      paintTiles[r].push(t);
+    }
+    if (r === ROWS - 1) row.insertAdjacentHTML('beforeend', LOCK_SVG);
+    paint.appendChild(row);
+  }
+  function renderPaint() {
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++)
+      paintTiles[r][c].className = 'tile c' + state.grid[r][c];
+  }
+
+  let painting = false, paintVal = 0;
+  function tileAt(x, y) {
+    const t = document.elementFromPoint(x, y);
+    return t && t.closest ? t.closest('#paint .tile') : null;
+  }
+  function paintTile(t) {
+    if (!t) return;
+    const r = +t.dataset.r, c = +t.dataset.c;
+    if (r === ROWS - 1) {
+      paint.children[r].classList.remove('shake'); void paint.children[r].offsetWidth; paint.children[r].classList.add('shake');
+      return;
+    }
+    if (state.grid[r][c] !== paintVal) {
+      state.grid[r][c] = paintVal;
+      state.offsets[r] = 0;
+      renderPaint();
+      update();
+    }
+  }
+  paint.addEventListener('pointerdown', e => {
+    const t = e.target.closest('.tile');
+    if (!t) return;
+    e.preventDefault();
+    const r = +t.dataset.r, c = +t.dataset.c;
+    paintVal = state.grid[r][c] === state.brush && r < ROWS - 1 ? 0 : state.brush;
+    painting = true;
+    paintTile(t);
+  });
+  window.addEventListener('pointermove', e => { if (painting) paintTile(tileAt(e.clientX, e.clientY)); });
+  window.addEventListener('pointerup', () => painting = false);
+  window.addEventListener('pointercancel', () => painting = false);
+
+  function setBrush(b) {
+    state.brush = b;
+    document.querySelectorAll('.brush').forEach(x => x.setAttribute('aria-pressed', +x.dataset.brush === b));
+  }
+  document.querySelectorAll('.brush').forEach(b => b.addEventListener('click', () => setBrush(+b.dataset.brush)));
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === '1' || e.key === '2' || e.key === '3') setBrush(+e.key - 1);
+  });
+
+  function setPicture(rows) {
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) state.grid[r][c] = rows[r][c];
+    state.offsets.fill(0);
+    renderPaint(); update();
+  }
+  document.querySelectorAll('[data-preset]').forEach(b => b.addEventListener('click', () =>
+    setPicture(PRESETS[b.dataset.preset].map(s => s.split('').map(Number)))));
+  $('#clearPic').addEventListener('click', () => setPicture(Array.from({ length: 5 }, () => Array(5).fill(0))));
+  $('#randomPic').addEventListener('click', () => {
+    // Random but achievable: take patterns from real words when an answer is set.
+    const rows = [];
+    for (let r = 0; r < 5; r++) {
+      if (state.answer.length === 5) {
+        const w = ALL[Math.floor(Math.random() * ALL.length)];
+        const p = W.score(w, state.answer);
+        if (W.encode(p) === W.ALL_GREEN) { r--; continue; }
+        rows.push(p);
+      } else rows.push(Array.from({ length: 5 }, () => [0, 0, 1, 2][Math.floor(Math.random() * 4)]));
+    }
+    setPicture(rows);
+  });
+
+  // ---------- Answer input ----------
+  const input = $('#answerInput');
+  const box = $('#answerBox');
+  const slots = [...box.querySelectorAll('.slot')];
+  function renderAnswer() {
+    input.value = state.answer;
+    slots.forEach((s, i) => {
+      const ch = state.answer[i] || '';
+      if (s.textContent !== ch) s.textContent = ch;
+      s.classList.toggle('filled', !!ch);
+      s.classList.toggle('cursor', i === Math.min(state.answer.length, 4));
+    });
+    const note = $('#answerNote');
+    note.className = 'answer-note';
+    if (state.answer.length < 5) note.textContent = state.answer ? `${5 - state.answer.length} more letter${state.answer.length === 4 ? '' : 's'}` : 'Tap the boxes and type a word';
+    else if (ANSWER_SET.has(state.answer)) note.textContent = 'In the common word list';
+    else if (ALL_SET.has(state.answer)) note.textContent = 'Valid Wordle word';
+    else { note.textContent = "Not in Wordle's word list, but we'll still solve for it"; note.className = 'answer-note warn'; }
+  }
+  input.addEventListener('input', () => {
+    state.answer = input.value.toLowerCase().replace(/[^a-z]/g, '').slice(0, 5);
+    state.offsets.fill(0);
+    renderAnswer(); update(true); renderFound();
+  });
+  input.addEventListener('focus', () => box.classList.add('focus'));
+  input.addEventListener('blur', () => box.classList.remove('focus'));
+  $('#randomAnswer').addEventListener('click', () => {
+    state.answer = ANSWERS[Math.floor(Math.random() * ANSWERS.length)];
+    state.offsets.fill(0);
+    renderAnswer(); update(true); renderFound();
+  });
+
+  // ---------- Solving ----------
+  const indexCache = new Map();
+  function getIndex(answer, commonOnly) {
+    const key = answer + (commonOnly ? ':c' : ':a');
+    if (!indexCache.has(key)) indexCache.set(key, W.buildIndex(answer, commonOnly ? ANSWERS : ALL));
+    return indexCache.get(key);
+  }
+
+  const results = $('#results');
+  const resultRows = [];
+  const CHEV_L = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m15 18-6-6 6-6"/></svg>';
+  const CHEV_R = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m9 18 6-6-6-6"/></svg>';
+  for (let r = 0; r < ROWS; r++) {
+    const rr = el('div', 'rrow');
+    const row = el('div', 'row');
+    row.appendChild(el('span', 'row-flag', '!'));
+    const tiles = [];
+    for (let c = 0; c < COLS; c++) { const t = el('div', 'tile'); row.appendChild(t); tiles.push(t); }
+    const cyc = el('div', 'cycler');
+    rr.append(row, cyc);
+    results.appendChild(rr);
+    resultRows.push({ row, tiles, cyc, word: null });
+  }
+
+  function cyclerHTML(info, r) {
+    if (!info) return '';
+    if (info.status === 'answer') return '<span class="tag win">Answer</span>';
+    if (info.status === 'impossible') return '<span class="tag bad">Impossible</span>';
+    const one = info.count <= 1;
+    return `<button data-r="${r}" data-d="-1" ${one ? 'disabled' : ''} aria-label="Previous word">${CHEV_L}</button>` +
+      `<span class="count">${(info.idx + 1).toLocaleString()} / ${info.count.toLocaleString()}</span>` +
+      `<button data-r="${r}" data-d="1" ${one ? 'disabled' : ''} aria-label="Next word">${CHEV_R}</button>` +
+      (info.repeated ? '<span class="tag rep" title="No unused word fits, so this repeats an earlier guess">repeat</span>' : '');
+  }
+  results.addEventListener('click', e => {
+    const b = e.target.closest('button[data-r]');
+    if (!b || !lastRows) return;
+    const r = +b.dataset.r;
+    const info = lastRows[r];
+    state.offsets[r] = info.idx + +b.dataset.d;
+    update(true);
+  });
+
+  function update(keepFind) {
+    if (!keepFind) clearFind();
+    saveHash();
+    const ready = state.answer.length === 5;
+    let rows = null;
+    if (ready) {
+      rows = W.solve(state.grid, state.answer, {
+        index: getIndex(state.answer, state.commonOnly),
+        fallbackIndex: state.commonOnly ? getIndex(state.answer, false) : null,
+        unique: state.unique,
+        offsets: state.offsets,
+      });
+    }
+    lastRows = rows;
+
+    // Results board
+    for (let r = 0; r < ROWS; r++) {
+      const info = rows && rows[r];
+      const rr = resultRows[r];
+      const word = info && info.word ? info.word : '';
+      const changed = word !== rr.word;
+      rr.word = word;
+      rr.row.classList.toggle('bad', !!info && info.status === 'impossible');
+      rr.tiles.forEach((t, c) => {
+        t.className = 'tile c' + state.grid[r][c] + (word ? '' : ' empty');
+        if (info && info.status === 'impossible' && info.cols.includes(c)) t.classList.add('culprit');
+        t.textContent = word[c] || '';
+        if (changed && word) { t.style.animationDelay = (c * 45) + 'ms'; t.classList.add('flip'); }
+      });
+      rr.cyc.innerHTML = cyclerHTML(info, r);
+    }
+
+    // Mark problems on the paint grid too
+    for (let r = 0; r < ROWS; r++) {
+      const info = rows && rows[r];
+      const bad = !!info && info.status === 'impossible';
+      paint.children[r].classList.toggle('bad', bad);
+      paintTiles[r].forEach((t, c) => t.classList.toggle('culprit', bad && info.cols.includes(c)));
+    }
+
+    // Status + problem list
+    const status = $('#status');
+    const problems = $('#problems');
+    problems.innerHTML = '';
+    const bad = rows ? rows.map((x, r) => ({ ...x, r })).filter(x => x.status === 'impossible') : [];
+    if (!ready) {
+      status.className = 'status idle';
+      status.innerHTML = '<span class="dot">…</span><div><strong>Enter an answer</strong><span class="sub">Type a 5-letter word in step 2 and the guesses appear here.</span></div>';
+    } else if (!bad.length) {
+      const reps = rows.filter(x => x.repeated).length;
+      status.className = 'status ok';
+      status.innerHTML = `<span class="dot">✓</span><div><strong>Your picture works!</strong><span class="sub">Play these guesses in order to draw it.${reps ? ` ${reps} row${reps > 1 ? 's' : ''} had to repeat a word.` : ' Use the arrows to try other words.'}</span></div>`;
+    } else {
+      status.className = 'status bad';
+      status.innerHTML = `<span class="dot">!</span><div><strong>${bad.length} row${bad.length > 1 ? 's' : ''} can't be made with ${state.answer.toUpperCase()}</strong><span class="sub">Problem rows are outlined in red and the tiles causing it are ringed. Not sure which word to use? Try <b>Find answers that fit my picture</b> in step 2.</span></div>`;
+      for (const b of bad) {
+        const li = el('li');
+        li.innerHTML = `<span class="rn">Row ${b.r + 1}</span><span>${b.reason}${b.canWiden ? ' <button class="link" data-widen>Allow uncommon words</button> to fix it.' : ''}</span>`;
+        problems.appendChild(li);
+      }
+    }
+    $('#copyWords').disabled = !ready || !!bad.length;
+  }
+
+  $('#problems').addEventListener('click', e => {
+    if (e.target.closest('[data-widen]')) { state.commonOnly = false; $('#optCommon').checked = false; update(); }
+  });
+
+  // ---------- Find answers that fit ----------
+  const packed = { all: null, common: null };
+  let findJob = 0, found = null, showAll = false;
+  function clearFind() { findJob++; found = null; $('#findOut').innerHTML = ''; $('#findProgress').hidden = true; $('#findBtn').disabled = false; }
+  function renderFound() {
+    const out = $('#findOut');
+    if (!found) return;
+    if (!found.length) {
+      out.innerHTML = 'No common answer can draw this picture. Try fewer all-yellow rows, or turn off "No repeated guesses".';
+      return;
+    }
+    const shown = showAll ? found : found.slice(0, 40);
+    out.innerHTML = `<strong style="color:var(--text)">${found.length.toLocaleString()}</strong> of ${ANSWERS.length.toLocaleString()} common answers work. Pick one:` +
+      '<div class="words">' + shown.map(w => `<button data-word="${w}" class="${w === state.answer ? 'on' : ''}">${w}</button>`).join('') + '</div>' +
+      (found.length > shown.length ? `<button class="more" data-more>Show all ${found.length.toLocaleString()}</button>` : '');
+  }
+  $('#findBtn').addEventListener('click', () => {
+    const job = ++findJob;
+    const words = state.commonOnly ? ANSWERS : ALL;
+    const key = state.commonOnly ? 'common' : 'all';
+    if (!packed[key]) packed[key] = W.pack(words);
+    const grid = state.grid.map(r => r.slice());
+    const unique = state.unique;
+    const hits = [];
+    const bar = $('#findProgress');
+    bar.hidden = false; bar.firstElementChild.style.width = '0';
+    $('#findBtn').disabled = true;
+    $('#findOut').textContent = 'Checking every answer…';
+    let i = 0;
+    (function step() {
+      if (job !== findJob) return;
+      const end = performance.now() + 14;
+      while (i < ANSWERS.length && performance.now() < end) {
+        if (W.works(grid, ANSWERS[i], packed[key], unique)) hits.push(ANSWERS[i]);
+        i++;
+      }
+      bar.firstElementChild.style.width = (100 * i / ANSWERS.length) + '%';
+      if (i < ANSWERS.length) return requestAnimationFrame(step);
+      bar.hidden = true;
+      $('#findBtn').disabled = false;
+      // Shuffle so the list isn't always alphabetical.
+      for (let k = hits.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); [hits[k], hits[j]] = [hits[j], hits[k]]; }
+      found = hits; showAll = false;
+      renderFound();
+    })();
+  });
+  $('#findOut').addEventListener('click', e => {
+    const b = e.target.closest('button[data-word]');
+    if (b) { state.answer = b.dataset.word; state.offsets.fill(0); renderAnswer(); update(true); renderFound(); return; }
+    if (e.target.closest('[data-more]')) { showAll = true; renderFound(); }
+  });
+
+  // ---------- Options & actions ----------
+  $('#optCommon').addEventListener('change', e => { state.commonOnly = e.target.checked; state.offsets.fill(0); update(); });
+  $('#optUnique').addEventListener('change', e => { state.unique = e.target.checked; update(); });
+  $('#shuffle').addEventListener('click', () => {
+    for (let r = 0; r < ROWS; r++) state.offsets[r] = Math.floor(Math.random() * 1e6);
+    update(true);
+  });
+
+  let toastTimer;
+  function toast(msg) {
+    const t = $('#toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1600);
+  }
+  async function copy(text, msg) {
+    try { await navigator.clipboard.writeText(text); toast(msg); }
+    catch { window.prompt('Copy this:', text); }
+  }
+  const EMOJI = ['⬛', '🟨', '🟩'];
+  $('#copyWords').addEventListener('click', () => {
+    if (lastRows) copy(lastRows.map((x, i) => `${i + 1}. ${x.word.toUpperCase()}`).join('\n'), 'Guesses copied');
+  });
+  $('#copyEmoji').addEventListener('click', () =>
+    copy('Wordle 6/6\n\n' + state.grid.map(r => r.map(c => EMOJI[c]).join('')).join('\n'), 'Emoji grid copied'));
+  $('#copyLink').addEventListener('click', () => copy(location.href, 'Link copied'));
+
+  // ---------- Explainer examples (rendered with the real scorer) ----------
+  const examples = [
+    ['those', 'geese', 'The answer has one E. The green E in spot 5 claims it, so the two earlier E\'s are grey.'],
+    ['abbey', 'bobby', 'After the green B in spot 3, one B is left over. The first extra B takes it (yellow) and the next one is grey.'],
+    ['speed', 'erase', 'Nothing is green, so both E\'s in SPEED are in the pool. Both E\'s in the guess turn yellow.'],
+  ];
+  const exWrap = $('#examples');
+  for (const [ans, guess, text] of examples) {
+    const p = W.score(guess, ans);
+    const mk = (word, cols, lbl) => `<div class="mini"><span class="lbl">${lbl}</span>${word.split('').map((ch, i) =>
+      `<div class="tile ${cols ? 'c' + cols[i] : ''}" ${cols ? '' : 'style="background:transparent;border:2px solid var(--border-strong);color:var(--text)"'}>${ch}</div>`).join('')}</div>`;
+    const d = el('div', 'example', mk(ans, null, 'Answer') + mk(guess, p, 'Guess') + `<div style="font-size:13px">${text}</div>`);
+    exWrap.appendChild(d);
+  }
+
+  // ---------- Init ----------
+  loadHash();
+  if (!location.hash) {
+    PRESETS.heart.forEach((row, r) => row.split('').forEach((v, c) => state.grid[r][c] = +v));
+    state.answer = 'heart';
+  }
+  $('#optCommon').checked = state.commonOnly;
+  $('#optUnique').checked = state.unique;
+  setBrush(1);
+  renderPaint();
+  renderAnswer();
+  update();
+})();
+</script>
+</body>
+</html>
