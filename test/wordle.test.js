@@ -56,3 +56,18 @@ for (const pic of pics) for (const answer of ANS.filter((_, i) => i % 5 === 0)) 
   agree++;
 }
 console.log(`ok - ${agree} works() checks`);
+
+// Shorter games: the last pattern passed in is the answer row.
+const G = [2, 2, 2, 2, 2];
+for (const answer of ['heart', 'crane', 'abbey']) {
+  const one = W.solve([G], answer, { index: W.buildIndex(answer, ALL), unique: true, offsets: [0] });
+  assert.deepStrictEqual(one.map(x => x.status), ['answer']);
+  assert.strictEqual(W.works([G], answer, PACKED, true), true);
+  const three = W.solve([[0, 1, 0, 0, 0], [0, 0, 2, 0, 0], G], answer, { index: W.buildIndex(answer, ALL), unique: true, offsets: [0, 0, 0] });
+  assert.deepStrictEqual(three.map(x => x.status), ['ok', 'ok', 'answer']);
+  assert.strictEqual(three[2].word, answer);
+  const early = W.solve([G, G], answer, { index: W.buildIndex(answer, ALL), unique: true, offsets: [0, 0] });
+  assert.strictEqual(early[0].kind, 'early');
+  assert.strictEqual(W.works([G, G], answer, PACKED, true), false);
+}
+console.log('ok - short games');

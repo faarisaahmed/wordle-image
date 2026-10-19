@@ -115,8 +115,21 @@
   .tile.c2 { background: var(--green); }
   #paint .tile { cursor: pointer; }
   #paint { touch-action: none; }
-  @media (hover: hover) { #paint .row:not(.locked) .tile:hover { transform: scale(1.05); box-shadow: 0 0 0 2px var(--border-strong); } }
+  @media (hover: hover) { #paint .row:not(.locked):not(.unused) .tile:hover { transform: scale(1.05); box-shadow: 0 0 0 2px var(--border-strong); } }
   #paint .row.locked .tile { cursor: not-allowed; }
+  #paint .row.unused .tile { cursor: default; }
+  .row:not(.locked) .lock { display: none; }
+  .tile.unused { background: transparent; box-shadow: inset 0 0 0 2px var(--border); }
+
+  .count-row { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 18px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+  .segmented { display: inline-flex; background: var(--card-2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; gap: 2px; }
+  .seg-btn {
+    border: 0; background: transparent; width: 32px; height: 28px; border-radius: 7px;
+    font-size: 13px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums;
+    transition: background .15s, color .15s;
+  }
+  .seg-btn:hover { color: var(--text); }
+  .seg-btn[aria-pressed="true"] { background: var(--green); color: #fff; }
   .lock {
     position: absolute; right: calc(-1 * (var(--gap) + 22px)); top: 50%; transform: translateY(-50%);
     width: 18px; height: 18px; color: var(--muted); opacity: .8;
@@ -309,6 +322,12 @@
             <button class="brush" data-brush="2"><span class="sw" style="background:var(--green)"></span>Green<kbd>3</kbd></button>
           </div>
         </div>
+        <div class="count-row">
+          <span>Solved on guess</span>
+          <div class="segmented" id="countSel" role="group" aria-label="Number of guesses">
+            <button class="seg-btn" data-count="1">1</button><button class="seg-btn" data-count="2">2</button><button class="seg-btn" data-count="3">3</button><button class="seg-btn" data-count="4">4</button><button class="seg-btn" data-count="5">5</button><button class="seg-btn" data-count="6">6</button>
+          </div>
+        </div>
         <div class="board" id="paint" aria-label="Picture grid"></div>
         <div class="toolbar">
           <button class="chip" data-preset="heart">♥ Heart</button>
@@ -321,7 +340,7 @@
           <button class="chip" id="randomPic">⚄ Random</button>
           <button class="chip" id="clearPic">✕ Clear</button>
         </div>
-        <p class="hint" style="text-align:center;margin-top:14px">Click or drag to paint. Clicking a tile that's already your brush colour turns it grey. The last row is the answer, so it's always green.</p>
+        <p class="hint" style="text-align:center;margin-top:14px">Click or drag to paint. Clicking a tile that's already your brush colour turns it grey. The answer row is always green; rows after it go unused.</p>
       </section>
 
       <section class="card">
@@ -423,10 +442,13 @@
     grid: Array.from({ length: ROWS }, (_, r) => Array(COLS).fill(r === ROWS - 1 ? 2 : 0)),
     answer: '',
     brush: 1,
+    count: ROWS, // guesses taken; row count-1 is the answer row
     commonOnly: false,
     unique: true,
     offsets: Array(ROWS).fill(0),
   };
+  // Remembers what was painted in a row while it's acting as the answer row.
+  const stash = {};
   let lastRows = null;
 
   const $ = s => document.querySelector(s);
@@ -441,6 +463,9 @@
     if (/^[a-z]{5}$/.test(a)) state.answer = a;
     if (h.get('common') === '1') state.commonOnly = true;
     if (h.get('unique') === '0') state.unique = false;
+    const n = +h.get('n');
+    if (n >= 1 && n <= ROWS) state.count = n;
+    state.grid[state.count - 1].fill(2);
   }
   function saveHash() {
     const p = new URLSearchParams();
@@ -448,6 +473,7 @@
     if (state.answer) p.set('a', state.answer);
     if (state.commonOnly) p.set('common', '1');
     if (!state.unique) p.set('unique', '0');
+    if (state.count !== ROWS) p.set('n', state.count);
     history.replaceState(null, '', '#' + p.toString());
   }
 
@@ -456,7 +482,7 @@
   const paintTiles = [];
   const LOCK_SVG = '<svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
   for (let r = 0; r < ROWS; r++) {
-    const row = el('div', 'row' + (r === ROWS - 1 ? ' locked' : ''));
+    const row = el('div', 'row');
     row.appendChild(el('span', 'row-flag', '!'));
     paintTiles.push([]);
     for (let c = 0; c < COLS; c++) {
@@ -465,13 +491,31 @@
       row.appendChild(t);
       paintTiles[r].push(t);
     }
-    if (r === ROWS - 1) row.insertAdjacentHTML('beforeend', LOCK_SVG);
+    row.insertAdjacentHTML('beforeend', LOCK_SVG);
     paint.appendChild(row);
   }
   function renderPaint() {
-    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++)
-      paintTiles[r][c].className = 'tile c' + state.grid[r][c];
+    for (let r = 0; r < ROWS; r++) {
+      paint.children[r].classList.toggle('locked', r === state.count - 1);
+      paint.children[r].classList.toggle('unused', r >= state.count);
+      for (let c = 0; c < COLS; c++)
+        paintTiles[r][c].className = r < state.count ? 'tile c' + state.grid[r][c] : 'tile unused';
+    }
+    document.querySelectorAll('.seg-btn').forEach(b => b.setAttribute('aria-pressed', +b.dataset.count === state.count));
   }
+
+  function setCount(n) {
+    if (n === state.count) return;
+    const old = state.count - 1;
+    state.grid[old] = stash[old] || Array(COLS).fill(0);
+    delete stash[old];
+    stash[n - 1] = state.grid[n - 1];
+    state.grid[n - 1] = Array(COLS).fill(2);
+    state.count = n;
+    state.offsets.fill(0);
+    renderPaint(); update();
+  }
+  document.querySelectorAll('.seg-btn').forEach(b => b.addEventListener('click', () => setCount(+b.dataset.count)));
 
   let painting = false, paintVal = 0;
   function tileAt(x, y) {
@@ -481,7 +525,8 @@
   function paintTile(t) {
     if (!t) return;
     const r = +t.dataset.r, c = +t.dataset.c;
-    if (r === ROWS - 1) {
+    if (r >= state.count) return;
+    if (r === state.count - 1) {
       paint.children[r].classList.remove('shake'); void paint.children[r].offsetWidth; paint.children[r].classList.add('shake');
       return;
     }
@@ -497,7 +542,7 @@
     if (!t) return;
     e.preventDefault();
     const r = +t.dataset.r, c = +t.dataset.c;
-    paintVal = state.grid[r][c] === state.brush && r < ROWS - 1 ? 0 : state.brush;
+    paintVal = state.grid[r][c] === state.brush && r < state.count - 1 ? 0 : state.brush;
     painting = true;
     paintTile(t);
   });
@@ -516,17 +561,19 @@
   });
 
   function setPicture(rows) {
-    for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) state.grid[r][c] = rows[r][c];
+    for (let r = 0; r < rows.length; r++) for (let c = 0; c < 5; c++) state.grid[r][c] = rows[r][c];
     state.offsets.fill(0);
     renderPaint(); update();
   }
-  document.querySelectorAll('[data-preset]').forEach(b => b.addEventListener('click', () =>
-    setPicture(PRESETS[b.dataset.preset].map(s => s.split('').map(Number)))));
-  $('#clearPic').addEventListener('click', () => setPicture(Array.from({ length: 5 }, () => Array(5).fill(0))));
+  document.querySelectorAll('[data-preset]').forEach(b => b.addEventListener('click', () => {
+    setCount(ROWS);
+    setPicture(PRESETS[b.dataset.preset].map(s => s.split('').map(Number)));
+  }));
+  $('#clearPic').addEventListener('click', () => setPicture(Array.from({ length: state.count - 1 }, () => Array(5).fill(0))));
   $('#randomPic').addEventListener('click', () => {
     // Random but achievable: take patterns from real words when an answer is set.
     const rows = [];
-    for (let r = 0; r < 5; r++) {
+    for (let r = 0; r < state.count - 1; r++) {
       if (state.answer.length === 5) {
         const w = ALL[Math.floor(Math.random() * ALL.length)];
         const p = W.score(w, state.answer);
@@ -618,7 +665,7 @@
     const ready = state.answer.length === 5;
     let rows = null;
     if (ready) {
-      rows = W.solve(state.grid, state.answer, {
+      rows = W.solve(state.grid.slice(0, state.count), state.answer, {
         index: getIndex(state.answer, state.commonOnly),
         fallbackIndex: state.commonOnly ? getIndex(state.answer, false) : null,
         unique: state.unique,
@@ -636,7 +683,7 @@
       rr.word = word;
       rr.row.classList.toggle('bad', !!info && info.status === 'impossible');
       rr.tiles.forEach((t, c) => {
-        t.className = 'tile c' + state.grid[r][c] + (word ? '' : ' empty');
+        t.className = r < state.count ? 'tile c' + state.grid[r][c] + (word ? '' : ' empty') : 'tile unused';
         if (info && info.status === 'impossible' && info.cols.includes(c)) t.classList.add('culprit');
         t.textContent = word[c] || '';
         if (changed && word) { t.style.animationDelay = (c * 45) + 'ms'; t.classList.add('flip'); }
@@ -669,7 +716,9 @@
       status.innerHTML = `<span class="dot">!</span><div><strong>${bad.length} row${bad.length > 1 ? 's' : ''} can't be made with ${state.answer.toUpperCase()}</strong><span class="sub">Problem rows are outlined in red and the tiles causing it are ringed. Not sure which word to use? Try <b>Find answers that fit my picture</b> in step 2.</span></div>`;
       for (const b of bad) {
         const li = el('li');
-        li.innerHTML = `<span class="rn">Row ${b.r + 1}</span><span>${b.reason}${b.canWiden ? ' <button class="link" data-widen>Allow uncommon words</button> to fix it.' : ''}</span>`;
+        const fix = b.canWiden ? ' <button class="link" data-widen>Allow uncommon words</button> to fix it.'
+          : b.kind === 'early' ? ` <button class="link" data-solve-on="${b.r + 1}">Make row ${b.r + 1} the answer</button> instead?` : '';
+        li.innerHTML = `<span class="rn">Row ${b.r + 1}</span><span>${b.reason}${fix}</span>`;
         problems.appendChild(li);
       }
     }
@@ -678,6 +727,8 @@
 
   $('#problems').addEventListener('click', e => {
     if (e.target.closest('[data-widen]')) { state.commonOnly = false; $('#optCommon').checked = false; update(); }
+    const solveOn = e.target.closest('[data-solve-on]');
+    if (solveOn) setCount(+solveOn.dataset.solveOn);
   });
 
   // ---------- Find answers that fit ----------
@@ -701,7 +752,7 @@
     const words = state.commonOnly ? ANSWERS : ALL;
     const key = state.commonOnly ? 'common' : 'all';
     if (!packed[key]) packed[key] = W.pack(words);
-    const grid = state.grid.map(r => r.slice());
+    const grid = state.grid.slice(0, state.count).map(r => r.slice());
     const unique = state.unique;
     const hits = [];
     const bar = $('#findProgress');
@@ -755,7 +806,7 @@
     if (lastRows) copy(lastRows.map((x, i) => `${i + 1}. ${x.word.toUpperCase()}`).join('\n'), 'Guesses copied');
   });
   $('#copyEmoji').addEventListener('click', () =>
-    copy('Wordle 6/6\n\n' + state.grid.map(r => r.map(c => EMOJI[c]).join('')).join('\n'), 'Emoji grid copied'));
+    copy(`Wordle ${state.count}/6\n\n` + state.grid.slice(0, state.count).map(r => r.map(c => EMOJI[c]).join('')).join('\n'), 'Emoji grid copied'));
   $('#copyLink').addEventListener('click', () => copy(location.href, 'Link copied'));
 
   // ---------- Explainer examples (rendered with the real scorer) ----------

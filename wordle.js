@@ -93,16 +93,16 @@
     return { ok: false, reason, cols };
   }
 
-  // patterns: 6 arrays of 5 colours. Returns one entry per row.
+  // patterns: 1-6 arrays of 5 colours; the last one is the answer row. Returns one entry per row.
   // opts: { index, fallbackIndex, unique, offsets }
   function solve(patterns, answer, opts) {
     const used = new Set([answer]);
     return patterns.map((p, r) => {
       const code = encode(p);
-      if (r === 5) return { status: 'answer', word: answer, count: 1, idx: 0 };
+      if (r === patterns.length - 1) return { status: 'answer', word: answer, count: 1, idx: 0 };
       if (code === ALL_GREEN) {
         return { status: 'impossible', kind: 'early', cols: [0, 1, 2, 3, 4],
-          reason: 'An all-green row means you guessed the answer, so the game would end here instead of on row 6.' };
+          reason: 'An all-green row means you guessed the answer, so the game would end here, before your final row.' };
       }
       const list = opts.index.get(code) || [];
       if (!list.length) {
@@ -135,11 +135,12 @@
   function works(patterns, answer, packed, unique) {
     const need = new Int8Array(243);
     let remaining = 0;
-    for (let r = 0; r < 5; r++) {
+    for (let r = 0; r < patterns.length - 1; r++) {
       const code = encode(patterns[r]);
       if (code === ALL_GREEN) return false;
       if (unique || need[code] === 0) { need[code]++; remaining++; }
     }
+    if (remaining === 0) return true;
     const a = [0, 1, 2, 3, 4].map(i => answer.charCodeAt(i) - 97);
     const pool = new Int8Array(26);
     const mul = [1, 3, 9, 27, 81];
